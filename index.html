@@ -14411,6 +14411,352 @@ body.stats-landscape-mode #statsView .stats-grid{
 })();
 </script>
 
+
+<style id="v82-history-delete-persist-style">
+#historyList .v82-history-empty{
+  margin:14px 10px;
+  padding:18px 14px;
+  border:1px solid rgba(244,212,122,.38);
+  border-radius:12px;
+  background:rgba(8,8,8,.72);
+  color:#f7f7f2;
+  font-size:clamp(18px,5vw,26px);
+  font-weight:900;
+  line-height:1.55;
+}
+#historyList [data-v82-delete-history],
+#historyList [data-v81-delete-history],
+#historyList [data-v80-delete-history],
+#historyList [data-v78-delete-history],
+#historyList [data-v59-delete-history],
+#historyList [data-delete-history]{
+  background:linear-gradient(180deg,#8c1f2b,#3d090f) !important;
+  color:#fff !important;
+  border-color:rgba(255,120,120,.55) !important;
+}
+</style>
+<script id="v82-history-delete-persist-script">
+(function(){
+  if (window.__mahjongV82HistoryDeletePersistInstalled) return;
+  window.__mahjongV82HistoryDeletePersistInstalled = true;
+
+  const esc82 = (value) => (typeof escapeHtml === 'function')
+    ? escapeHtml(value)
+    : String(value ?? '').replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  const fmt82 = (value) => (typeof fmt === 'function') ? fmt(value) : String(value ?? 0);
+
+  function stable82(value){
+    try {
+      if (Array.isArray(value)) return value.map(stable82);
+      if (value && typeof value === 'object') {
+        return Object.keys(value).sort().reduce((acc, key) => {
+          if (typeof value[key] !== 'function') acc[key] = stable82(value[key]);
+          return acc;
+        }, {});
+      }
+    } catch(e){}
+    return value;
+  }
+
+  function keyGame82(game){
+    const g = game || {};
+    return JSON.stringify(stable82({
+      date: String(g.date || ''),
+      names: g.names || [],
+      score: g.score || [],
+      chips: g.chips || [],
+      rounds: g.rounds || [],
+      roundChips: g.roundChips || [],
+      yakumanRecords: g.yakumanRecords || [],
+      yakitoriRecords: g.yakitoriRecords || [],
+      streakRecords: g.streakRecords || []
+    }));
+  }
+
+  function deletedKeys82(){
+    if (!state.v82DeletedHistoryKeys || typeof state.v82DeletedHistoryKeys !== 'object' || Array.isArray(state.v82DeletedHistoryKeys)) {
+      state.v82DeletedHistoryKeys = {};
+    }
+    return state.v82DeletedHistoryKeys;
+  }
+
+  function markDeleted82(game){
+    const key = keyGame82(game);
+    const store = deletedKeys82();
+    store[key] = Date.now();
+    const keys = Object.keys(store);
+    if (keys.length > 200) {
+      keys.sort((a,b) => Number(store[a] || 0) - Number(store[b] || 0))
+        .slice(0, keys.length - 200)
+        .forEach((k) => delete store[k]);
+    }
+    return key;
+  }
+
+  function isDeleted82(game){
+    return Boolean(deletedKeys82()[keyGame82(game)]);
+  }
+
+  function currentSummary82(){
+    try {
+      if (typeof currentGameSummary === 'function') return currentGameSummary();
+    } catch(e){}
+    return {
+      date: state.date,
+      names: Array.isArray(state.players) ? state.players : [],
+      score: Array.isArray(state.rounds) && state.rounds.length ? state.rounds[state.rounds.length - 1] : [],
+      chips: Array.isArray(state.chips) ? state.chips : [],
+      rounds: state.rounds || [],
+      roundChips: state.roundChips || [],
+      yakumanRecords: state.yakumanRecords || [],
+      yakitoriRecords: state.yakitoriRecords || [],
+      streakRecords: state.streakRecords || []
+    };
+  }
+
+  function cleanupDeletedHistory82(){
+    if (!Array.isArray(state.history)) state.history = [];
+    const before = state.history.length;
+    state.history = state.history.filter((game) => !isDeleted82(game));
+    if (!state.history.length) {
+      state.history = [];
+      state.v81HistoryEmpty = true;
+      state.v82HistoryEmpty = true;
+      delete state.historyFilterPlayers;
+    } else {
+      delete state.v81HistoryEmpty;
+      delete state.v82HistoryEmpty;
+    }
+    return before !== state.history.length;
+  }
+
+  function dateOnly82(value){
+    const text = String(value || '日付なし');
+    try { if (typeof v59DateOnly === 'function') return v59DateOnly(text); } catch(e){}
+    try { if (typeof v58DateOnly === 'function') return v58DateOnly(text); } catch(e){}
+    const match = text.match(/^\d{4}\/\d{2}\/\d{2}/);
+    return match ? match[0] : text.split(' ')[0];
+  }
+
+  function filterSet82(){
+    try { if (typeof v59FilterSet === 'function') return v59FilterSet(); } catch(e){}
+    try {
+      const all = new Set();
+      (state.history || []).forEach((game) => (game.names || []).forEach((name) => name && all.add(name)));
+      const selected = Array.isArray(state.historyFilterPlayers) ? state.historyFilterPlayers.filter((name) => all.has(name)) : [];
+      return selected.length && selected.length !== all.size ? new Set(selected) : null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function entries82(){
+    cleanupDeletedHistory82();
+    const list = Array.isArray(state.history) ? state.history : [];
+    const set = filterSet82();
+    return list
+      .map((game, historyIndex) => ({ game, historyIndex }))
+      .filter(({game}) => !set || (game.names || []).some((name) => set.has(name)));
+  }
+
+  function winnerTypes82(game, playerIndex){
+    try { if (typeof v59WinnerTypesForGame === 'function') return v59WinnerTypesForGame(game, playerIndex); } catch(e){}
+    return '-';
+  }
+
+  function yakumanLog82(game){
+    try {
+      const records = typeof v59YakumanRecords === 'function'
+        ? v59YakumanRecords(game)
+        : (typeof v58YakumanRecords === 'function' ? v58YakumanRecords(game) : (game.yakumanRecords || []));
+      if (!records || !records.length) return '';
+      const textFn = typeof v59YakumanText === 'function'
+        ? v59YakumanText
+        : (typeof v58YakumanText === 'function' ? v58YakumanText : null);
+      return `<div class="yakuman-log">${records.map((record, i) => {
+        const text = textFn ? textFn(record, game.names || []) : ((record && (record.yakumanName || record.name)) || '役満');
+        return `<div>${i + 1}. ${esc82(text)}</div>`;
+      }).join('')}</div>`;
+    } catch(e) {
+      return '';
+    }
+  }
+
+  function renderHistory82(){
+    const historyList = document.querySelector('#historyList');
+    if (!historyList) return;
+
+    const rows = entries82();
+    const total = Array.isArray(state.history) ? state.history.length : 0;
+
+    if (!total) {
+      historyList.innerHTML = '<div class="v82-history-empty">対局履歴はありません。</div>';
+      return;
+    }
+    if (!rows.length) {
+      historyList.innerHTML = '<div class="v82-history-empty">フィルタ条件に合う履歴はありません。</div>';
+      return;
+    }
+
+    historyList.innerHTML = rows.map(({game, historyIndex}) => `
+      <article class="history-item" data-v82-history-item="${historyIndex}">
+        <div class="history-fold-head">
+          <div class="history-fold-date">${esc82(dateOnly82(game.date))}</div>
+          <button class="history-toggle-btn" data-v82-history-toggle="${historyIndex}" type="button">開く</button>
+        </div>
+        <div class="history-fold-body" data-v82-history-body="${historyIndex}" hidden>
+          <div class="history-grid">
+            ${(game.names || []).map((name, i) => `
+              <div>
+                <div class="history-name">${esc82(name)}</div>
+                <div class="history-score">${fmt82(game.score && game.score[i] || 0)}</div>
+                <div class="chip">チ ${fmt82(game.chips && game.chips[i] || 0)}</div>
+                <div class="chip">役 ${esc82(winnerTypes82(game, i))}</div>
+              </div>
+            `).join('')}
+          </div>
+          ${yakumanLog82(game)}
+          <div class="history-draft-note">編集で開いても、履歴へ保存するまで元データは変更しません。</div>
+          <div class="history-actions-row">
+            <button class="mini-btn" data-v82-history-detail="${historyIndex}" type="button">編集で開く</button>
+            <button class="mini-btn" data-v82-delete-history="${historyIndex}" type="button">削除</button>
+          </div>
+        </div>
+      </article>
+    `).join('');
+
+    document.querySelectorAll('[data-v82-history-toggle]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const body = document.querySelector(`[data-v82-history-body="${button.dataset.v82HistoryToggle}"]`);
+        if (!body) return;
+        const opening = body.hidden;
+        body.hidden = !opening;
+        button.textContent = opening ? '閉じる' : '開く';
+      });
+    });
+
+    document.querySelectorAll('[data-v82-history-detail]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const game = (state.history || [])[Number(button.dataset.v82HistoryDetail)];
+        if (!game) return;
+        if (typeof v59LoadHistoryGame === 'function') v59LoadHistoryGame(game);
+        else if (typeof v58LoadHistoryGame === 'function') v58LoadHistoryGame(game);
+        else if (typeof v57LoadHistoryGame === 'function') v57LoadHistoryGame(game);
+        else if (typeof show === 'function') show('detailView');
+      });
+    });
+  }
+
+  async function deleteHistoryIndex82(index){
+    index = Number(index);
+    cleanupDeletedHistory82();
+    if (!Array.isArray(state.history) || !state.history[index]) {
+      if (typeof toast === 'function') toast('削除する履歴が見つかりません');
+      renderHistory82();
+      return;
+    }
+
+    const game = state.history[index];
+    const confirmed = await dramaticConfirm({
+      title:'この履歴を削除しますか？',
+      message:`${game.date || '日付なし'}\n削除すると元に戻せません。`,
+      warning:'必要なら先にバックアップしてください。',
+      okLabel:'削除',
+      cancelLabel:'キャンセル'
+    });
+    if (!confirmed) return;
+
+    const deletedKey = markDeleted82(game);
+    state.history = (state.history || []).filter((item, i) => i !== index && keyGame82(item) !== deletedKey);
+
+    const currentKey = keyGame82(currentSummary82());
+    if (currentKey === deletedKey) {
+      state.v82DeletedCurrentHistoryKey = deletedKey;
+      delete state.v58EditingHistoryDate;
+      delete state.v59AllowHistoryWrite;
+    }
+
+    cleanupDeletedHistory82();
+
+    if (typeof save === 'function') save();
+
+    renderHistory82();
+    try { if (typeof renderStats === 'function') renderStats(); } catch(e){}
+    try { if (typeof renderAnalysis === 'function') renderAnalysis(); } catch(e){}
+    setTimeout(renderHistory82, 0);
+    setTimeout(renderHistory82, 100);
+
+    if (typeof toast === 'function') toast('履歴を削除しました');
+  }
+
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-v82-delete-history],[data-v81-delete-history],[data-v80-delete-history],[data-v78-delete-history],[data-v59-delete-history],[data-delete-history]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    const rawIndex =
+      button.dataset.v82DeleteHistory ??
+      button.dataset.v81DeleteHistory ??
+      button.dataset.v80DeleteHistory ??
+      button.dataset.v78DeleteHistory ??
+      button.dataset.v59DeleteHistory ??
+      button.dataset.deleteHistory;
+
+    deleteHistoryIndex82(rawIndex);
+  }, true);
+
+  const oldSave82 = typeof save === 'function' ? save : null;
+  if (oldSave82 && !oldSave82.__v82Wrapped) {
+    const wrappedSave = function(){
+      cleanupDeletedHistory82();
+      return oldSave82.apply(this, arguments);
+    };
+    wrappedSave.__v82Wrapped = true;
+    save = wrappedSave;
+  }
+
+  const oldArchive82 = typeof archiveCurrentGame === 'function' ? archiveCurrentGame : null;
+  if (oldArchive82 && !oldArchive82.__v82Wrapped) {
+    const wrappedArchive = function(){
+      const beforeKey = keyGame82(currentSummary82());
+      if (deletedKeys82()[beforeKey] || state.v82DeletedCurrentHistoryKey === beforeKey) {
+        cleanupDeletedHistory82();
+        return;
+      }
+      const result = oldArchive82.apply(this, arguments);
+      cleanupDeletedHistory82();
+      return result;
+    };
+    wrappedArchive.__v82Wrapped = true;
+    archiveCurrentGame = wrappedArchive;
+  }
+
+  renderHistory = renderHistory82;
+
+  const oldRender82 = typeof render === 'function' ? render : null;
+  if (oldRender82 && !oldRender82.__v82Wrapped) {
+    const wrappedRender = function(){
+      const result = oldRender82.apply(this, arguments);
+      cleanupDeletedHistory82();
+      setTimeout(renderHistory82, 0);
+      return result;
+    };
+    wrappedRender.__v82Wrapped = true;
+    render = wrappedRender;
+  }
+
+  cleanupDeletedHistory82();
+  setTimeout(renderHistory82, 0);
+  setTimeout(() => { cleanupDeletedHistory82(); renderHistory82(); }, 250);
+})();
+</script>
+
 </body></html>
 <!-- v72: 連勝入力キーパッド順序を 0 1 2 3 4 5 / 6 7 8 9 ← C に変更 -->
 
