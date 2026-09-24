@@ -12483,9 +12483,7 @@ body.stats-v59-landscape #statsView.view.active{
         return { selected, income:v64YakitoriIncomeFromSelected(selected, players) };
       });
     }
-    const total = v64SumRows(state.roundExtras || [], 'yakitori', players);
-    const selected = v64YakitoriSelectedFromValues(total, players);
-    return selected.some(Boolean) ? [{ selected, income:v64YakitoriIncomeFromSelected(selected, players) }] : [];
+return [];
   }
   function v64YakitoriIncome(records, names){
     const players = v64Players(names);
@@ -12732,7 +12730,6 @@ body.stats-v59-landscape #statsView.view.active{
 
   const oldCurrentGameSummaryV64 = typeof currentGameSummary === 'function' ? currentGameSummary : null;
   currentGameSummary = function(){
-    v64ApplyYakitoriRecordsToRoundExtras();
     const base = oldCurrentGameSummaryV64 ? oldCurrentGameSummaryV64() : { date:state.date, names:[...(state.players || [])], score:typeof totals === 'function' ? totals() : [], chips:[...(state.chips || [])] };
     return { ...base, yakitoriRecords:(state.yakitoriRecords || []).map((record) => ({ selected:[...(record.selected || [])], income:[...(record.income || [])] })) };
   };
@@ -13031,9 +13028,7 @@ body.stats-v59-landscape #statsView.view.active{
         return { selected, income:yakitoriIncomeFromSelected(selected, ps) };
       }).filter((record) => record.selected.some(Boolean));
     }
-    const total = sumRows(state.roundExtras || [], 'yakitori', ps);
-    const selected = ps.map((_, i) => Number(total[i] || 0) < 0);
-    return selected.some(Boolean) ? [{ selected, income:yakitoriIncomeFromSelected(selected, ps) }] : [];
+return [];
   }
   function yakitoriIncome(records, names){
     const total = zeroRow(names);
@@ -13762,7 +13757,7 @@ body.stats-v68-landscape #statsView .stats-grid{grid-template-columns:repeat(var
     if (yaki === 2 && safe === 2) { yakiIndexes.forEach((idx) => { total[idx] -= 200; }); safeIndexes.forEach((idx) => { total[idx] += 200; }); return total; }
     yakiIndexes.forEach((idx) => { total[idx] -= 200 * safe; }); safeIndexes.forEach((idx) => { total[idx] += 200 * yaki; }); return total;
   }
-  function normalizeYakitoriRecords(records, names){ const ps = players(names); if (Array.isArray(records) && records.length) { return records.map((record) => { const selected = ps.map((_, i) => !!(record && Array.isArray(record.selected) ? record.selected[i] : false)); return { selected, income:yakitoriIncomeFromSelected(selected, ps) }; }).filter((record) => record.selected.some(Boolean)); } const total = sumRows(state.roundExtras || [], 'yakitori', ps); const selected = ps.map((_, i) => Number(total[i] || 0) < 0); return selected.some(Boolean) ? [{ selected, income:yakitoriIncomeFromSelected(selected, ps) }] : []; }
+  function normalizeYakitoriRecords(records, names){ const ps = players(names); if (Array.isArray(records) && records.length) { return records.map((record) => { const selected = ps.map((_, i) => !!(record && Array.isArray(record.selected) ? record.selected[i] : false)); return { selected, income:yakitoriIncomeFromSelected(selected, ps) }; }).filter((record) => record.selected.some(Boolean)); } return []; }
   function yakitoriIncome(records, names){ const total = zeroRow(names); normalizeYakitoriRecords(records, names).forEach((record) => { const row = yakitoriIncomeFromSelected(record.selected, names); total.forEach((_, i) => { total[i] += Number(row[i] || 0); }); }); return total; }
   function applyYakitori(){ ensureRoundArrays(); if (!(state.rounds || []).length) return; const aggregate = yakitoriIncome(state.yakitoriRecords || [], state.players || []); state.roundExtras.forEach((extra) => { extra.yakitori = zeroRow(); delete extra.yakitoriSelected; }); state.roundExtras[state.rounds.length - 1].yakitori = aggregate; }
   function yakitoriStats(game){ const names = players(game && game.names); const income = zeroRow(names), count = zeroRow(names), paid = zeroRow(names); const records = Array.isArray(game && game.yakitoriRecords) && game.yakitoriRecords.length ? game.yakitoriRecords : []; if (records.length) { normalizeYakitoriRecords(records, names).forEach((record) => { const row = yakitoriIncomeFromSelected(record.selected, names); names.forEach((_, i) => { const value = Number(row[i] || 0); income[i] += value; if (record.selected[i]) { count[i] += 1; paid[i] += Math.abs(value); } }); }); } else { (game && Array.isArray(game.roundExtras) ? game.roundExtras : []).forEach((extra) => { const row = extra && Array.isArray(extra.yakitori) ? extra.yakitori : []; names.forEach((_, i) => { const value = Number(row[i] || 0); income[i] += value; if (value < 0) { count[i] += 1; paid[i] += Math.abs(value); } }); }); } return { income, count, paid }; }
@@ -20535,6 +20530,8 @@ body.stats-landscape-mode #statsView .stats-scroll{
     state.roundEndPoints = Array.isArray(game.roundEndPoints) ? game.roundEndPoints.map((round) => Array.isArray(round) ? [...round] : []) : [];
     state.yakumanRecords = Array.isArray(game.yakumanRecords) ? game.yakumanRecords.map((record) => ({ ...record })) : [];
     state.chips = state.players.map((_, i) => (state.roundChips || []).reduce((sum, row) => sum + Number(row && row[i] || 0), 0));
+    state.yakitoriRecords = JSON.parse(JSON.stringify(game.yakitoriRecords || []));
+    state.streakRecords = JSON.parse(JSON.stringify(game.streakRecords || []));
     state.date = game.date;
     state.v58EditingHistoryDate = game.date;
     state.v109EditingHistoryKey = key109(game);
@@ -20871,5 +20868,45 @@ function historyTime116(game) {
  function ready() { sortHistory(); renderHistory(); }
  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, {once:true});
  else ready();
+})();
+</script>
+
+<script id="v117-september-photo-bonuses">
+(() => {
+ const flag = 'v117SeptemberBonusPhotosRestored';
+ const names = ['トシ','クドー','スズキ','ジュン'];
+ const selections = [[false,false,true,false],[false,true,false,false],[false,true,true,true],[false,false,true,false],[true,false,false,false]];
+ const clone = value => JSON.parse(JSON.stringify(value));
+ function restore(game, field) {
+  const order = game[field];
+  game.yakitoriRecords = selections.map(selected => {
+   const count = selected.filter(Boolean).length;
+   return {selected:order.map(name => selected[names.indexOf(name)]),income:order.map(name => selected[names.indexOf(name)] ? -200*(4-count) : 200*count)};
+  });
+  game.streakRecords = [{count:3,winner:order.indexOf('トシ'),rate:300}];
+  game.roundExtras = (game.rounds || []).map((_,i) => ({...(game.roundExtras || [])[i],yakitori:order.map(()=>0),shugi:clone(game.roundExtras?.[i]?.shugi || order.map(()=>0))}));
+  if(game.roundExtras.length) game.roundExtras.at(-1).yakitori=order.map((_,i)=>game.yakitoriRecords.reduce((sum,r)=>sum+r.income[i],0));
+ }
+ function matches(game,field) {
+  return /^2026[\/-]0?9[\/-]21(?:\s|$)/.test(game.date || '') && Array.isArray(game[field]) && game[field].length===4 && names.every(name=>game[field].includes(name)) && game.rounds?.length===14;
+ }
+ function run() {
+  if(state[flag]) return;
+  const targets=(state.history || []).filter(g=>matches(g,'names'));
+  if(targets.length!==1) return;
+  const before=clone(state);
+  try {
+   state.v117BonusBeforeRestore=clone(targets.map(g=>({date:g.date,names:g.names,yakitoriRecords:g.yakitoriRecords,streakRecords:g.streakRecords,roundExtras:g.roundExtras})));
+   restore(targets[0],'names');
+   if(matches(state,'players')) restore(state,'players');
+   state[flag]=true;
+   save();
+   if(typeof render==='function')render();
+  } catch(error) {
+   Object.keys(state).forEach(key=>delete state[key]); Object.assign(state,before);
+   window.alert('9月21日の明細を復元できませんでした。'+error.message);
+  }
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run,{once:true});else run();
 })();
 </script>
