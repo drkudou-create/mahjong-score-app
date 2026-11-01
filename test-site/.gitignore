@@ -1,0 +1,4 @@
+*backup*.json
+archive-embedded-history/
+*.zip
+*.bundle
