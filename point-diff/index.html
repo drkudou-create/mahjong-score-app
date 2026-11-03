@@ -4502,7 +4502,7 @@
     <h1>麻雀 点差判別アプリ</h1>
     <div class="subtitle">
       LED直接認識＋修正版<br>
-      v53（供託変更時の点数確認）
+      v54（斜めの点数表示を補正）
     </div>
 
     <div class="box">
@@ -4960,7 +4960,20 @@
       let best = null;
       let bestWidth = 0;
       let bestHeight = 0;
+      let bestShear = 0;
+      let diamondRaster = null;
       const hypothesesByScale = [];
+
+      function consider(hypotheses, w, h, shear) {
+        hypotheses.forEach(function(hypothesis) {
+          if (!best || hypothesis.hypothesisScore > best.hypothesisScore) {
+            best = hypothesis;
+            bestWidth = w;
+            bestHeight = h;
+            bestShear = shear;
+          }
+        });
+      }
 
       maxWidths.forEach(function(maxWidth) {
         const ratio = Math.min(1, maxWidth / img.width);
@@ -4981,13 +4994,12 @@
         const hypotheses = buildLedDetectionHypotheses(imageData.data, w, h);
         const evidence = buildLedEvidence(imageData.data, w, h);
         hypothesesByScale.push({ w: w, h: h, hypotheses: hypotheses, evidence: evidence });
-        hypotheses.forEach(function(hypothesis) {
-          if (!best || hypothesis.hypothesisScore > best.hypothesisScore) {
-            best = hypothesis;
-            bestWidth = w;
-            bestHeight = h;
-          }
-        });
+        consider(hypotheses, w, h, 0);
+        if (!diamondRaster && hypotheses.some(function(hypothesis) {
+          return getDiamondGroupPositions(hypothesis.groups) !== null;
+        })) {
+          diamondRaster = { data: imageData.data, w: w, h: h };
+        }
       });
 
       if (!best) {
@@ -5006,8 +5018,26 @@
       // v44: 単独の読みでは合計が目標に合わなかった場合に限り、
       // 候補同士を桁ごとに組み合わせ直して、合計がぴったり合う
       // 読みがないか探します（見つからなければ従来どおり最良の仮説）。
-      const bestInfo = ledHypothesisTotal(best);
-      if (!(bestInfo.filled === 4 && bestInfo.total === getLedTargetTotal())) {
+      const targetTotal = getLedTargetTotal();
+      function matchesTotal() {
+        const info = ledHypothesisTotal(best);
+        return info.filled === 4 && info.total === targetTotal;
+      }
+
+      // A slanted display can have vertically skewed digits even when its row is horizontal.
+      if (!matchesTotal() && diamondRaster) {
+        const { data, w, h } = diamondRaster;
+        for (const shear of [0.15, -0.15, 0.25, -0.25]) {
+          const straightened = straightenLedRaster(data, w, h, shear);
+          const hypotheses = buildLedDetectionHypotheses(straightened, w, h).filter(function(hypothesis) {
+            return getDiamondGroupPositions(hypothesis.groups) !== null;
+          });
+          consider(hypotheses, w, h, shear);
+          if (matchesTotal()) break;
+        }
+      }
+
+      if (!matchesTotal()) {
         let combo = null;
         hypothesesByScale.forEach(function(entry) {
           const result = recombineLedCandidates(entry.hypotheses, entry.evidence);
@@ -5040,11 +5070,25 @@
       return {
         width: bestWidth,
         height: bestHeight,
+        shear: bestShear,
         mask: best.mask,
         digits: best.digits,
         groups: best.groups,
         scoreCandidates: best.scoreCandidates
       };
+    }
+
+    function straightenLedRaster(data, w, h, shear) {
+      const result = new Uint8ClampedArray(data.length);
+      for (let y = 0; y < h; y++) {
+        const shift = Math.round(shear * (y - h / 2));
+        const length = w - Math.abs(shift);
+        if (length <= 0) continue;
+        const source = (y * w + Math.max(0, shift)) * 4;
+        const destination = (y * w + Math.max(0, -shift)) * 4;
+        result.set(data.subarray(source, source + length * 4), destination);
+      }
+      return result;
     }
 
     // 4人の合計の目標（供託リーチ棒がある場合はその分を引きます）
@@ -5609,6 +5653,7 @@
       const scoreCandidates = [];
       const used = new Set();
 
+      const positions = getDiamondGroupPositions(numberGroups);
       numberGroups.forEach(function(group) {
         const raw = group.map(function(d) { return d.digit; }).join("");
 
@@ -5634,7 +5679,7 @@
           note = raw + " 表示";
         }
 
-        const positionInfo = getGroupPosition(group, w, h);
+        const positionInfo = positions ? positions.get(group) : getGroupPosition(group, w, h);
 
         const uniqueKey = positionInfo.key + "-" + score;
 
@@ -5969,6 +6014,33 @@
       };
     }
 
+    function getDiamondGroupPositions(groups) {
+      if (groups.length !== 4 || groups.some(function(group) { return group.length < 3; })) {
+        return null;
+      }
+
+      const bounds = groups.map(function(group) {
+        const x1 = Math.min(...group.map(digit => digit.x1));
+        const x2 = Math.max(...group.map(digit => digit.x2));
+        const y1 = Math.min(...group.map(digit => digit.y1));
+        const y2 = Math.max(...group.map(digit => digit.y2));
+        return { group, x1, x2, y1, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+      }).sort((a, b) => a.cx - b.cx);
+      const [left, first, second, right] = bounds;
+      const [top, bottom] = [first, second].sort((a, b) => a.cy - b.cy);
+      if (top.y2 >= bottom.y1 || top.x2 <= bottom.x1 || bottom.x2 <= top.x1 ||
+          left.cx >= Math.min(top.x1, bottom.x1) || right.cx <= Math.max(top.x2, bottom.x2)) {
+        return null;
+      }
+
+      return new Map([
+        [bottom.group, { key: "bottom", label: "下（自分）", order: 0 }],
+        [right.group, { key: "right", label: "右", order: 1 }],
+        [top.group, { key: "top", label: "上", order: 2 }],
+        [left.group, { key: "left", label: "左", order: 3 }]
+      ]);
+    }
+
     function getGroupPosition(group, imageWidth, imageHeight) {
       const x1 = Math.min.apply(null, group.map(function(d) { return d.x1; }));
       const y1 = Math.min.apply(null, group.map(function(d) { return d.y1; }));
@@ -6189,7 +6261,11 @@
       canvas.height = detection.height;
 
       const ctx = canvas.getContext("2d");
+      const shear = detection.shear || 0;
+      ctx.save();
+      if (shear) ctx.transform(1, 0, -shear, 1, shear * detection.height / 2, 0);
       ctx.drawImage(img, 0, 0, detection.width, detection.height);
+      ctx.restore();
 
       ctx.lineWidth = Math.max(2, detection.width / 250);
       ctx.font = Math.max(16, detection.width / 25) + "px sans-serif";
