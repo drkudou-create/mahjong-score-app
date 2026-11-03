@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "mahjong-point-diff:" + self.registration.scope + ":";
-const CACHE_NAME = CACHE_PREFIX + "v52-keep-round-settings";
+const CACHE_NAME = CACHE_PREFIX + "v53-deposit-recognition";
 
 const APP_FILES = [
   "./",

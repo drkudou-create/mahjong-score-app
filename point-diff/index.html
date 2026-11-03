@@ -4502,7 +4502,7 @@
     <h1>麻雀 点差判別アプリ</h1>
     <div class="subtitle">
       LED直接認識＋修正版<br>
-      v52（再読み取り時の供託・本場を保持）
+      v53（供託変更時の点数確認）
     </div>
 
     <div class="box">
@@ -4738,6 +4738,7 @@
     let originalImageDataUrl = "";
     let currentAutoTargetKey = "";
     let currentScoreCandidates = [];
+    let uneditedPhotoCandidates = null;
     let currentStartingDealerKey = "bottom";
 
     function showPhotoPreview(event) {
@@ -4865,10 +4866,11 @@
       }
 
       currentScoreCandidates = [];
+      uneditedPhotoCandidates = null;
       currentAutoTargetKey = "";
     }
 
-    async function analyzeLedNumbersCore() {
+    async function analyzeLedNumbersCore(requiredTotal) {
       const status = document.getElementById("status");
       const analyzeButton = document.getElementById("analyzeButton");
 
@@ -4877,7 +4879,7 @@
         return;
       }
 
-      clearRecognitionResult();
+      if (requiredTotal === undefined) clearRecognitionResult();
 
       analyzeButton.disabled = true;
       status.textContent = "赤いLED数字を解析中です。";
@@ -4885,6 +4887,11 @@
       try {
         const img = await loadImage(originalImageDataUrl);
         const detection = detectLedNumbers(img);
+
+        if (requiredTotal !== undefined) {
+          const reading = ledHypothesisTotal(detection);
+          if (reading.filled !== 4 || reading.total !== requiredTotal) return false;
+        }
 
         drawDebugCanvas(img, detection);
 
@@ -4894,6 +4901,7 @@
         } else {
           // 読み取った候補を保存します。
           currentScoreCandidates = detection.scoreCandidates;
+          uneditedPhotoCandidates = currentScoreCandidates;
 
           // 下（自分）として読み取れた点数を、自分の点数欄に自動入力します。
           autoInputSelfScore(currentScoreCandidates);
@@ -4922,6 +4930,7 @@
             scrollElementStrong(diamondBoard, 70);
             flashElement(diamondBoard, "scroll-target-highlight", 1400);
           }, 450);
+          return true;
         }
       } catch (error) {
         console.error(error);
@@ -5040,15 +5049,9 @@
 
     // 4人の合計の目標（供託リーチ棒がある場合はその分を引きます）
     function getLedTargetTotal() {
-      let targetTotal = 100000;
       const depositInput = document.getElementById("depositSticks");
-      if (depositInput) {
-        const deposit = parseInt(depositInput.value, 10);
-        if (!isNaN(deposit) && deposit > 0) {
-          targetTotal -= deposit * 1000;
-        }
-      }
-      return targetTotal;
+      const deposit = depositInput ? parseScore(depositInput.value) : 0;
+      return 100000 - deposit * 1000;
     }
 
     // 仮説について「位置ごとの先頭候補」とその合計をまとめます
@@ -5673,14 +5676,7 @@
         total += firstByPosition[key].score;
       });
 
-      let targetTotal = 100000;
-      const depositInput = document.getElementById("depositSticks");
-      if (depositInput) {
-        const deposit = parseInt(depositInput.value, 10);
-        if (!isNaN(deposit) && deposit > 0) {
-          targetTotal -= deposit * 1000;
-        }
-      }
+      const targetTotal = getLedTargetTotal();
 
       let hypothesisScore = filled * 10;
 
@@ -6447,6 +6443,7 @@
     function updateTotalCheckDisplay(rankingItems) {
       const area = document.getElementById("totalCheckArea");
       const diamondArea = document.getElementById("diamondTotalCheck");
+      const detail = document.getElementById("diamondTotalDetail");
 
       function renderMiniTotal(isOk, isUnknown) {
         if (!diamondArea) return;
@@ -6479,6 +6476,7 @@
         }
 
         renderMiniTotal(false, true);
+        if (detail) detail.hidden = true;
         return;
       }
 
@@ -6486,11 +6484,15 @@
         return sum + item.score;
       }, 0);
 
-      const depositSticksInput = document.getElementById("depositSticks");
-      const depositSticks = depositSticksInput ? parseScore(depositSticksInput.value) || 0 : 0;
-      const totalWithDeposit = playerTotal + depositSticks * 1000;
-
-      const isOk = totalWithDeposit === 100000;
+      const targetTotal = getLedTargetTotal();
+      const isOk = playerTotal === targetTotal;
+      if (detail) {
+        const depositPoints = 100000 - targetTotal;
+        detail.textContent = "4人 " + formatPoint(playerTotal) + " ＋ 供託 " +
+          formatPoint(depositPoints) + " ＝ " + formatPoint(playerTotal + depositPoints) +
+          "（基準 " + formatPoint(100000) + "）";
+        detail.hidden = isOk;
+      }
 
       if (area) {
         area.className = isOk
@@ -6733,6 +6735,12 @@
 
       updateArea.appendChild(updateButton);
       updateArea.appendChild(updateHelp);
+      const totalDetail = document.createElement("div");
+      totalDetail.id = "diamondTotalDetail";
+      totalDetail.className = "candidate-update-help";
+      totalDetail.setAttribute("role", "status");
+      totalDetail.hidden = true;
+      updateArea.appendChild(totalDetail);
       numberItemArea.appendChild(updateArea);
 
       numbersList.style.display = "block";
@@ -6888,11 +6896,7 @@
         return sum + Number(scoreMap[key].score || 0);
       }, 0);
 
-      const depositInput = document.getElementById("depositSticks");
-      const depositSticks = depositInput ? parseScore(depositInput.value) || 0 : 0;
-      const totalWithDeposit = total + depositSticks * 1000;
-
-      return totalWithDeposit === 100000;
+      return total === getLedTargetTotal();
     }
 
     function scrollToResultIfTotalOk() {
@@ -7067,10 +7071,22 @@
       }
 
       // ダイヤ型の供託・本場を内部入力欄へ同期します。
+      const previousTargetTotal = getLedTargetTotal();
       syncDiamondRoundSettingsToHiddenInputs();
 
       if (!currentScoreCandidates || currentScoreCandidates.length === 0) {
         return;
+      }
+
+      const photoScoresUnchanged = currentScoreCandidates === uneditedPhotoCandidates &&
+        currentScoreCandidates.every(function(candidate) {
+          return getEditedCandidateScore(candidate) === candidate.score;
+        });
+      const targetTotal = getLedTargetTotal();
+      if (photoScoresUnchanged && previousTargetTotal !== targetTotal && !isCurrentTotalOk()) {
+        return autoAnalyzeLedNumbers(targetTotal).then(function(readOk) {
+          if (!readOk) return applyCandidateCardEdits();
+        });
       }
 
       const isManualMode = currentScoreCandidates.some(function(candidate) {
@@ -7108,6 +7124,8 @@
 
         return newCandidate;
       });
+
+      if (photoScoresUnchanged) uneditedPhotoCandidates = currentScoreCandidates;
 
       // 下（自分）を自分の点数欄に反映します。
       autoInputSelfScore(currentScoreCandidates);
@@ -9029,7 +9047,7 @@
       画像読み込み後に自動で点数を読み取る関数です。
       失敗した場合は、撮り直し・手入力を案内します。
     */
-    async function autoAnalyzeLedNumbers() {
+    async function autoAnalyzeLedNumbers(requiredTotal) {
       const status = document.getElementById("status");
       const imageLoadStatus = document.getElementById("imageLoadStatus");
 
@@ -9042,25 +9060,24 @@
       }
 
       try {
-        await analyzeLedNumbersCore();
-
-        const hasCandidates =
-          currentScoreCandidates &&
-          currentScoreCandidates.length > 0;
-
-        if (hasCandidates) {
+        const readOk = await analyzeLedNumbersCore(requiredTotal);
+        if (readOk) {
           if (imageLoadStatus) {
             imageLoadStatus.textContent = "点数を読み取りました。必要なら点数一覧を手で修正してください。";
           }
         } else {
+          const message = requiredTotal === undefined
+            ? "読み取れませんでした。画像を撮り直すか、点数を手で入力してください。"
+            : "供託を反映した合計が一致しません。";
           if (status) {
-            status.textContent = "読み取れませんでした。画像を撮り直すか、点数を手で入力してください。";
+            status.textContent = message;
           }
 
           if (imageLoadStatus) {
-            imageLoadStatus.textContent = "読み取れませんでした。画像を撮り直すか、点数を手で入力してください。";
+            imageLoadStatus.textContent = message;
           }
         }
+        return readOk;
       } catch (error) {
         console.error(error);
 
@@ -9071,6 +9088,7 @@
         if (imageLoadStatus) {
           imageLoadStatus.textContent = "読み取れませんでした。画像を撮り直すか、点数を手で入力してください。";
         }
+        return false;
       }
     }
 
