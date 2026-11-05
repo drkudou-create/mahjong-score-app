@@ -4478,6 +4478,27 @@
       text-shadow: 0 1px 0 rgba(255,255,255,.30) !important;
     }
 
+    .diamond-total-mode {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
+    .diamond-total-mode label {
+      margin: 0;
+      font-size: 13px;
+    }
+
+    .diamond-total-mode select {
+      width: 100%;
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .current-leader-card {
+      grid-column: 1 / -1;
+    }
+
     @media (max-width: 430px) {
       .app::after {
         left: 18px;
@@ -4502,7 +4523,7 @@
     <h1>麻雀 点差判別アプリ</h1>
     <div class="subtitle">
       LED直接認識＋修正版<br>
-      v54（斜めの点数表示を補正）
+      v61テスト版（順位・ツモ条件・画像読取を修正）
     </div>
 
     <div class="box">
@@ -4704,11 +4725,18 @@
       { all: 700 },
       { all: 800 },   // 七対子25符2翻：親ツモ800オール
       { all: 1000 },
+      { all: 1200 },
       { all: 1300 },
+      { all: 1500 },
       { all: 1600 },
+      { all: 1800 },
       { all: 2000 },
+      { all: 2300 },
       { all: 2600 },
+      { all: 2900 },
       { all: 3200 },
+      { all: 3600 },
+      { all: 3900 },
       { all: 4000 },
       { all: 6000 },
       { all: 8000 },
@@ -4723,11 +4751,18 @@
       { childPay: 400, dealerPay: 700 },
       { childPay: 400, dealerPay: 800 },   // 七対子25符2翻：子ツモ400/800
       { childPay: 500, dealerPay: 1000 },
+      { childPay: 600, dealerPay: 1200 },
       { childPay: 700, dealerPay: 1300 },
+      { childPay: 800, dealerPay: 1500 },
       { childPay: 800, dealerPay: 1600 },
+      { childPay: 900, dealerPay: 1800 },
       { childPay: 1000, dealerPay: 2000 },
+      { childPay: 1200, dealerPay: 2300 },
       { childPay: 1300, dealerPay: 2600 },
+      { childPay: 1500, dealerPay: 2900 },
       { childPay: 1600, dealerPay: 3200 },
+      { childPay: 1800, dealerPay: 3600 },
+      { childPay: 2000, dealerPay: 3900 },
       { childPay: 2000, dealerPay: 4000 },
       { childPay: 3000, dealerPay: 6000 },
       { childPay: 4000, dealerPay: 8000 },
@@ -4736,9 +4771,11 @@
     ];
 
     let originalImageDataUrl = "";
+    let photoRequestId = 0;
     let currentAutoTargetKey = "";
     let currentScoreCandidates = [];
     let uneditedPhotoCandidates = null;
+    let scoreTotalMode = "auto";
     let currentStartingDealerKey = "bottom";
 
     function showPhotoPreview(event) {
@@ -4756,48 +4793,20 @@
         imageLoadStatus.textContent = "画像を読み込み中です：" + file.name;
       }
 
+      const requestId = ++photoRequestId;
+      originalImageDataUrl = "";
+      document.getElementById("analyzeButton").disabled = true;
       clearRecognitionResult();
 
       const reader = new FileReader();
       reader.onload = function(e) {
+        if (requestId !== photoRequestId) return;
         originalImageDataUrl = e.target.result;
-
-        const photoPreview = document.getElementById("photoPreview");
-
-        photoPreview.onload = function() {
-          const analyzeButton = document.getElementById("analyzeButton");
-          analyzeButton.disabled = false;
-        analyzeButton.style.display = "block";
-          analyzeButton.style.display = "block";
-
-          document.getElementById("status").textContent =
-            "点数を読み取り中です…";
-
-          if (imageLoadStatus) {
-            imageLoadStatus.textContent =
-              "点数を読み取り中です…";
-          }
-
-          // 画像表示が完了したら、自動で点数読み取りを開始します。
-          setTimeout(function() {
-            autoAnalyzeLedNumbers();
-          }, 150);
-        };
-
-        photoPreview.onerror = function() {
-          document.getElementById("status").textContent =
-            "画像の表示に失敗しました。別の画像、またはスクリーンショットで試してください。";
-
-          if (imageLoadStatus) {
-            imageLoadStatus.textContent =
-              "画像の表示に失敗しました。別の画像、またはスクリーンショットで試してください。";
-          }
-        };
-
-        photoPreview.src = originalImageDataUrl;
+        autoAnalyzeLedNumbers();
       };
 
       reader.onerror = function() {
+        if (requestId !== photoRequestId) return;
         document.getElementById("status").textContent =
           "画像の読み込みに失敗しました。別の画像で試してください。";
 
@@ -4870,7 +4879,7 @@
       currentAutoTargetKey = "";
     }
 
-    async function analyzeLedNumbersCore(requiredTotal) {
+    async function analyzeLedNumbersCore(requiredTotals, requestId = ++photoRequestId) {
       const status = document.getElementById("status");
       const analyzeButton = document.getElementById("analyzeButton");
 
@@ -4879,18 +4888,19 @@
         return;
       }
 
-      if (requiredTotal === undefined) clearRecognitionResult();
+      if (requiredTotals === undefined) clearRecognitionResult();
 
       analyzeButton.disabled = true;
       status.textContent = "赤いLED数字を解析中です。";
 
       try {
         const img = await loadImage(originalImageDataUrl);
+        if (requestId !== photoRequestId) return null;
         const detection = detectLedNumbers(img);
 
-        if (requiredTotal !== undefined) {
+        if (requiredTotals !== undefined) {
           const reading = ledHypothesisTotal(detection);
-          if (reading.filled !== 4 || reading.total !== requiredTotal) return false;
+          if (reading.filled !== 4 || !requiredTotals.includes(reading.total)) return false;
         }
 
         drawDebugCanvas(img, detection);
@@ -4917,11 +4927,14 @@
           // 自分の点数と目標相手の点数が両方入っていれば、自動で判定します.
           autoJudgeIfReady("自動で逆転条件を判定しました。");
 
-          status.textContent =
-            detection.scoreCandidates.length + "個の点数候補を見つけました。トップ目を自動で目標にして、逆転条件まで判定しました。";
+          const filledSeats = ledHypothesisTotal(detection).filled;
+          status.textContent = filledSeats === 4
+            ? "4個の点数候補を見つけました。逆転条件を判定しました。"
+            : filledSeats + "席の点数を読み取りました。未検出の席は点数を入力してください。";
 
           // 画像選択後、描画されたダイヤ型の点数候補まで自動で移動します。
           setTimeout(function() {
+            if (requestId !== photoRequestId) return;
             const diamondBoard = document.querySelector(".diamond-board");
             if (!diamondBoard) {
               return;
@@ -4933,11 +4946,14 @@
           return true;
         }
       } catch (error) {
+        if (requestId !== photoRequestId) return null;
         console.error(error);
         status.textContent = "解析中にエラーが出ました。写真を撮り直してください。";
       } finally {
-        analyzeButton.disabled = false;
-        analyzeButton.style.display = "block";
+        if (requestId === photoRequestId) {
+          analyzeButton.disabled = false;
+          analyzeButton.style.display = "block";
+        }
       }
     }
 
@@ -4961,16 +4977,19 @@
       let bestWidth = 0;
       let bestHeight = 0;
       let bestShear = 0;
+      let bestRowSlope = 0;
+      let widestRaster = null;
       let diamondRaster = null;
       const hypothesesByScale = [];
 
-      function consider(hypotheses, w, h, shear) {
+      function consider(hypotheses, w, h, shear, rowSlope = 0) {
         hypotheses.forEach(function(hypothesis) {
           if (!best || hypothesis.hypothesisScore > best.hypothesisScore) {
             best = hypothesis;
             bestWidth = w;
             bestHeight = h;
             bestShear = shear;
+            bestRowSlope = rowSlope;
           }
         });
       }
@@ -4990,10 +5009,11 @@
         ctx.drawImage(img, 0, 0, w, h);
 
         const imageData = ctx.getImageData(0, 0, w, h);
+        if (!widestRaster) widestRaster = { data: imageData.data, w: w, h: h };
 
         const hypotheses = buildLedDetectionHypotheses(imageData.data, w, h);
         const evidence = buildLedEvidence(imageData.data, w, h);
-        hypothesesByScale.push({ w: w, h: h, hypotheses: hypotheses, evidence: evidence });
+        hypothesesByScale.push({ w: w, h: h, data: imageData.data, hypotheses: hypotheses, evidence: evidence });
         consider(hypotheses, w, h, 0);
         if (!diamondRaster && hypotheses.some(function(hypothesis) {
           return getDiamondGroupPositions(hypothesis.groups) !== null;
@@ -5018,10 +5038,16 @@
       // v44: 単独の読みでは合計が目標に合わなかった場合に限り、
       // 候補同士を桁ごとに組み合わせ直して、合計がぴったり合う
       // 読みがないか探します（見つからなければ従来どおり最良の仮説）。
-      const targetTotal = getLedTargetTotal();
+      const targetTotals = getLedTargetTotals();
       function matchesTotal() {
         const info = ledHypothesisTotal(best);
-        return info.filled === 4 && info.total === targetTotal;
+        return info.filled === 4 && targetTotals.includes(info.total);
+      }
+
+      if (!matchesTotal() && getDiamondGroupPositions(best.groups)) {
+        const raster = hypothesesByScale.find(entry => entry.w === bestWidth);
+        const reading = readLedDiamondByEvidence(raster, best.groups);
+        if (reading) return reading;
       }
 
       // A slanted display can have vertically skewed digits even when its row is horizontal.
@@ -5033,6 +5059,25 @@
             return getDiamondGroupPositions(hypothesis.groups) !== null;
           });
           consider(hypotheses, w, h, shear);
+          if (matchesTotal()) break;
+        }
+      }
+
+      // Strong oblique views need both the digits and their rows straightened.
+      if (!matchesTotal() && widestRaster && ledHypothesisTotal(best).filled >= 2) {
+        const { data, w, h } = widestRaster;
+        const obliqueCorrections = [
+          [-0.45, 0.08], [-0.5, 0.1], [0.45, -0.08],
+          [0.5, -0.1], [-0.4, 0.08], [0.4, -0.08]
+        ];
+        for (const [shear, rowSlope] of obliqueCorrections) {
+          const corrected = straightenObliqueLedRaster(data, w, h, shear, rowSlope);
+          const hypotheses = buildLedDetectionHypotheses(corrected, w, h).filter(function(hypothesis) {
+            const info = ledHypothesisTotal(hypothesis);
+            return info.filled === 4 && targetTotals.includes(info.total) &&
+              getDiamondGroupPositions(hypothesis.groups) !== null;
+          });
+          consider(hypotheses, w, h, shear, rowSlope);
           if (matchesTotal()) break;
         }
       }
@@ -5071,11 +5116,55 @@
         width: bestWidth,
         height: bestHeight,
         shear: bestShear,
+        rowSlope: bestRowSlope,
         mask: best.mask,
         digits: best.digits,
         groups: best.groups,
         scoreCandidates: best.scoreCandidates
       };
+    }
+
+    function readLedDiamondByEvidence(raster, groups) {
+      const { data, w, h } = raster;
+      const digits = groups.flat();
+      const padding = Math.round(Math.min(...digits.map(digit => digit.height)) * 0.3);
+      const cropTop = Math.max(0, Math.min(...digits.map(digit => digit.y1)) - padding);
+      const cropBottom = Math.min(h, Math.max(...digits.map(digit => digit.y2)) + padding + 1);
+      const height = cropBottom - cropTop;
+      const cropped = data.subarray(cropTop * w * 4, cropBottom * w * 4);
+
+      function bestReading(shear) {
+        const pixels = shear ? straightenLedRaster(cropped, w, height, shear) : cropped;
+        const evidence = buildLedEvidence(pixels, w, height);
+        let reading = null;
+        for (const hypothesis of buildLedDetectionHypotheses(pixels, w, height)) {
+          const candidates = hypothesis.scoreCandidates;
+          if (candidates.length !== 4 || !getDiamondGroupPositions(hypothesis.groups) ||
+              candidates.some(candidate => !/^0[0-9]{3}$/.test(candidate.raw))) continue;
+          const cost = candidates.reduce(function(sum, candidate) {
+            return sum + ledGroupEvidenceCost(candidate.group, candidate.raw, evidence, 4);
+          }, 0);
+          if (!reading || cost < reading.cost) {
+            const signature = candidates.map(candidate => candidate.positionKey + ":" + candidate.raw).sort().join(",");
+            reading = { ...hypothesis, cost, signature, shear };
+          }
+        }
+        return reading;
+      }
+
+      const original = bestReading(0);
+      if (!original) return null;
+      // Require the same reading under two corrections and better pixel evidence in both.
+      for (const direction of [-1, 1]) {
+        const first = bestReading(direction * 0.15);
+        if (!first || first.signature === original.signature || original.cost - first.cost < 1.5) continue;
+        const second = bestReading(direction * 0.23);
+        if (second && second.signature === first.signature && original.cost - second.cost >= 1.5) {
+          const reading = first.cost <= second.cost ? first : second;
+          return { ...reading, width: w, height, cropTop, sourceHeight: h };
+        }
+      }
+      return null;
     }
 
     function straightenLedRaster(data, w, h, shear) {
@@ -5091,11 +5180,31 @@
       return result;
     }
 
-    // 4人の合計の目標（供託リーチ棒がある場合はその分を引きます）
-    function getLedTargetTotal() {
+    function straightenObliqueLedRaster(data, w, h, shear, rowSlope) {
+      const result = new Uint8ClampedArray(data.length);
+      for (let y = 0; y < h; y++) {
+        const xShift = Math.round(shear * (y - h / 2));
+        for (let x = Math.max(0, -xShift); x < Math.min(w, w - xShift); x++) {
+          const sourceY = Math.round(y + rowSlope * (x - w / 2));
+          if (sourceY < 0 || sourceY >= h) continue;
+          const source = (sourceY * w + x + xShift) * 4;
+          const destination = (y * w + x) * 4;
+          result[destination] = data[source];
+          result[destination + 1] = data[source + 1];
+          result[destination + 2] = data[source + 2];
+          result[destination + 3] = data[source + 3];
+        }
+      }
+      return result;
+    }
+
+    // 画像認識と合計チェックで同じ持ち点の目標を使います。
+    function getLedTargetTotals() {
+      if (scoreTotalMode === "displayed") return [100000];
       const depositInput = document.getElementById("depositSticks");
       const deposit = depositInput ? parseScore(depositInput.value) : 0;
-      return 100000 - deposit * 1000;
+      const netTotal = 100000 - deposit * 1000;
+      return scoreTotalMode === "auto" && deposit > 0 ? [netTotal, 100000] : [netTotal];
     }
 
     // 仮説について「位置ごとの先頭候補」とその合計をまとめます
@@ -5405,12 +5514,12 @@
         optionsByPosition[key] = arr.slice(0, 14);
       });
 
-      const targetTotal = getLedTargetTotal();
+      const targetTotals = getLedTargetTotals();
       let bestCombo = null;
       const chosen = [];
       const search = function(idx, total, cost, support) {
         if (idx === positionKeys.length) {
-          if (total === targetTotal &&
+          if (targetTotals.includes(total) &&
               (!bestCombo || cost < bestCombo.cost ||
                (cost === bestCombo.cost && support > bestCombo.support))) {
             bestCombo = { chosen: chosen.slice(), cost: cost, support: support };
@@ -5721,15 +5830,16 @@
         total += firstByPosition[key].score;
       });
 
-      const targetTotal = getLedTargetTotal();
+      const targetTotals = getLedTargetTotals();
 
       let hypothesisScore = filled * 10;
 
       if (filled === 4) {
-        if (total === targetTotal) {
+        const distance = Math.min(...targetTotals.map(target => Math.abs(total - target)));
+        if (distance === 0) {
           hypothesisScore += 25;
         } else {
-          hypothesisScore -= Math.min(10, Math.abs(total - targetTotal) / 2000);
+          hypothesisScore -= Math.min(10, distance / 2000);
         }
       }
 
@@ -6262,9 +6372,15 @@
 
       const ctx = canvas.getContext("2d");
       const shear = detection.shear || 0;
+      const rowSlope = detection.rowSlope || 0;
       ctx.save();
-      if (shear) ctx.transform(1, 0, -shear, 1, shear * detection.height / 2, 0);
-      ctx.drawImage(img, 0, 0, detection.width, detection.height);
+      if (shear || rowSlope) {
+        const determinant = 1 - shear * rowSlope;
+        ctx.translate(detection.width / 2, detection.height / 2);
+        ctx.transform(1 / determinant, -rowSlope / determinant, -shear / determinant, 1 / determinant, 0, 0);
+        ctx.translate(-detection.width / 2, -detection.height / 2);
+      }
+      ctx.drawImage(img, 0, -(detection.cropTop || 0), detection.width, detection.sourceHeight || detection.height);
       ctx.restore();
 
       ctx.lineWidth = Math.max(2, detection.width / 250);
@@ -6436,8 +6552,8 @@
     function updateRankingDisplay(rankingItems) {
       const rankArea = document.getElementById("rankArea");
 
-      if (rankingItems.length === 0) {
-        rankArea.innerHTML = "<div class='rank-summary'>順位を表示できる点数が見つかりませんでした。</div>";
+      if (rankingItems.length < 4 || rankingItems.some(item => item.score <= 0)) {
+        rankArea.innerHTML = "<div class='rank-summary'>4人分の点数が揃うまで順位は未確定です。</div>";
         return;
       }
 
@@ -6514,7 +6630,7 @@
 
     /*
       4人の点数合計を「合ってる / 合ってない」だけで表示します。
-      供託リーチ棒がある場合は、4人合計 + 供託分 が100,000点になるかを確認します。
+      選択した基準に従って、4人の表示点または供託込みの合計を確認します。
     */
     function updateTotalCheckDisplay(rankingItems) {
       const area = document.getElementById("totalCheckArea");
@@ -6560,14 +6676,17 @@
         return sum + item.score;
       }, 0);
 
-      const targetTotal = getLedTargetTotal();
-      const isOk = playerTotal === targetTotal;
+      const targetTotals = getLedTargetTotals();
+      const isOk = targetTotals.includes(playerTotal);
       if (detail) {
-        const depositPoints = 100000 - targetTotal;
-        detail.textContent = "4人 " + formatPoint(playerTotal) + " ＋ 供託 " +
-          formatPoint(depositPoints) + " ＝ " + formatPoint(playerTotal + depositPoints) +
-          "（基準 " + formatPoint(100000) + "）";
-        detail.hidden = isOk;
+        const depositPoints = 100000 - targetTotals[0];
+        const matchedDisplayedTotal = targetTotals.length > 1 && playerTotal === 100000;
+        detail.textContent = scoreTotalMode === "displayed" || matchedDisplayedTotal
+          ? "4人の表示点 " + formatPoint(playerTotal) + "（基準 " + formatPoint(100000) + "）"
+          : "4人 " + formatPoint(playerTotal) + " ＋ 供託 " +
+            formatPoint(depositPoints) + " ＝ " + formatPoint(playerTotal + depositPoints) +
+            "（基準 " + formatPoint(100000) + "）";
+        detail.hidden = isOk && !matchedDisplayedTotal;
       }
 
       if (area) {
@@ -6704,13 +6823,14 @@
       const positionOrder = ["top", "left", "right", "bottom"];
 
       positionOrder.forEach(function(positionKey) {
-        const itemData = candidates.find(function(item) {
+        const recognizedItem = candidates.find(function(item) {
           return item.positionKey === positionKey;
         });
-
-        if (!itemData) {
-          return;
-        }
+        const itemData = recognizedItem || {
+          positionKey: positionKey,
+          positionLabel: positionLabelFromKey(positionKey),
+          score: 0
+        };
 
         const card = document.createElement("div");
         card.className = "diamond-card diamond-" + positionKey;
@@ -6754,7 +6874,7 @@
         score.className = "diamond-score";
         score.textContent = itemData.isManualInput
           ? "手入力"
-          : itemData.score.toLocaleString("ja-JP") + "点";
+          : recognizedItem ? itemData.score.toLocaleString("ja-JP") + "点" : "未検出";
 
         const input = document.createElement("input");
         input.className = "diamond-input candidate-score-input";
@@ -6764,7 +6884,7 @@
         input.min = "0";
         input.placeholder = itemData.isManualInput
           ? (itemData.positionKey === "bottom" ? "例250" : "例391")
-          : String(Math.round(itemData.score / 100));
+          : recognizedItem ? String(Math.round(itemData.score / 100)) : "例250";
 
         // 通常の画像読み取り時は、修正欄を空欄にします。
         // 手動入力モードでは、判定後も入力した数値を残します。
@@ -6778,7 +6898,7 @@
         hint.className = "diamond-hint";
         hint.textContent = itemData.isManualInput
           ? "例：391=39,100点"
-          : "空欄=" + itemData.score.toLocaleString("ja-JP") + "点";
+          : recognizedItem ? "空欄=" + itemData.score.toLocaleString("ja-JP") + "点" : "";
 
         card.appendChild(dealerButton);
         card.appendChild(startButton);
@@ -6809,6 +6929,17 @@
         ? "入力値は判定後も残ります / 親=丸 / 供託・本場は空欄で0"
         : "空欄=読取点 / 親=丸";
 
+      const totalMode = document.createElement("div");
+      totalMode.className = "diamond-total-mode";
+      totalMode.innerHTML =
+        "<label for='diamondTotalMode'>点数合計の基準</label>" +
+        "<select id='diamondTotalMode'>" +
+        "<option value='auto'>自動判定</option>" +
+        "<option value='with-deposit'>4人＋供託で100,000点</option>" +
+        "<option value='displayed'>4人の表示点で100,000点</option>" +
+        "</select>";
+      totalMode.querySelector("select").value = scoreTotalMode;
+      updateArea.appendChild(totalMode);
       updateArea.appendChild(updateButton);
       updateArea.appendChild(updateHelp);
       const totalDetail = document.createElement("div");
@@ -6950,7 +7081,7 @@
 
     /*
       点数合計が合っているかを、現在の候補点数から判定します。
-      供託リーチ棒も含めて 100,000点 になるか確認します。
+      選択した基準に一致するか確認します。
     */
     function isCurrentTotalOk() {
       if (!currentScoreCandidates || currentScoreCandidates.length < 4) {
@@ -6972,7 +7103,7 @@
         return sum + Number(scoreMap[key].score || 0);
       }, 0);
 
-      return total === getLedTargetTotal();
+      return getLedTargetTotals().includes(total);
     }
 
     function scrollToResultIfTotalOk() {
@@ -7027,11 +7158,13 @@
     }
 
     /*
-      ダイヤ型の供託・本場入力を、内部計算用の入力欄へ同期します。
+      ダイヤ型の供託・本場と合計の基準を、内部の設定へ同期します。
     */
     function syncDiamondRoundSettingsToHiddenInputs() {
       const diamondDeposit = document.getElementById("diamondDepositSticks");
       const diamondHonba = document.getElementById("diamondHonbaCount");
+      const totalMode = document.getElementById("diamondTotalMode");
+      if (totalMode) scoreTotalMode = totalMode.value;
 
       const depositInput = document.getElementById("depositSticks");
       const honbaInput = document.getElementById("honbaCount");
@@ -7140,6 +7273,13 @@
     }
 
     function applyCandidateCardEdits() {
+      const invalidInput = Array.from(document.querySelectorAll(".candidate-score-input, .diamond-mini-input"))
+        .find(input => !input.validity.valid);
+      if (invalidInput) {
+        invalidInput.reportValidity();
+        return;
+      }
+
       // 更新ボタンを押したら、まず入力中の欄からフォーカスを外します。
       // これによりiPhoneで自動スクロールしやすくなります。
       if (document.activeElement && document.activeElement.blur) {
@@ -7147,21 +7287,26 @@
       }
 
       // ダイヤ型の供託・本場を内部入力欄へ同期します。
-      const previousTargetTotal = getLedTargetTotal();
+      const previousTargetTotals = getLedTargetTotals();
       syncDiamondRoundSettingsToHiddenInputs();
 
       if (!currentScoreCandidates || currentScoreCandidates.length === 0) {
         return;
       }
 
+      const candidatesForEdit = ["bottom", "right", "top", "left"].map(function(key, order) {
+        return currentScoreCandidates.find(candidate => candidate.positionKey === key) || {
+          positionKey: key, positionLabel: positionLabelFromKey(key), positionOrder: order, score: 0, group: []
+        };
+      });
       const photoScoresUnchanged = currentScoreCandidates === uneditedPhotoCandidates &&
-        currentScoreCandidates.every(function(candidate) {
+        candidatesForEdit.every(function(candidate) {
           return getEditedCandidateScore(candidate) === candidate.score;
         });
-      const targetTotal = getLedTargetTotal();
-      if (photoScoresUnchanged && previousTargetTotal !== targetTotal && !isCurrentTotalOk()) {
-        return autoAnalyzeLedNumbers(targetTotal).then(function(readOk) {
-          if (!readOk) return applyCandidateCardEdits();
+      const targetTotals = getLedTargetTotals();
+      if (photoScoresUnchanged && previousTargetTotals.join() !== targetTotals.join() && !isCurrentTotalOk()) {
+        return autoAnalyzeLedNumbers(targetTotals).then(function(readOk) {
+          if (readOk === false) return applyCandidateCardEdits();
         });
       }
 
@@ -7185,7 +7330,7 @@
         }
       }
 
-      currentScoreCandidates = currentScoreCandidates.map(function(candidate) {
+      currentScoreCandidates = candidatesForEdit.map(function(candidate) {
         const editedScore = getEditedCandidateScore(candidate);
         const newCandidate = Object.assign({}, candidate);
 
@@ -7199,7 +7344,7 @@
           "点";
 
         return newCandidate;
-      });
+      }).filter(candidate => candidate.score > 0);
 
       if (photoScoresUnchanged) uneditedPhotoCandidates = currentScoreCandidates;
 
@@ -7733,9 +7878,12 @@
         .replace(/[０-９]/g, function(char) {
           return String.fromCharCode(char.charCodeAt(0) - 0xFEE0);
         })
-        .replace(/[^0-9]/g, "");
-
-      return text ? Number(text) : 0;
+        .replace(/，/g, ",")
+        .replace(/－|−/g, "-")
+        .trim();
+      if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)\s*点?$/.test(text)) return 0;
+      const number = Number(text.replace(/[,点]/g, ""));
+      return Number.isSafeInteger(number) ? number : 0;
     }
 
     function formatPoint(num) {
@@ -7827,6 +7975,158 @@
       }
 
       return html;
+    }
+
+    /*
+      v59テスト: 自分がトップのときに、相手に逆転されてしまう最小のアガリ点を
+      計算します（振ってはいけない点数の表示用）。
+      計算モデルは calculateConditionsForTarget と同じで、勝つ側と守る側を
+      入れ替えたものです。同点の扱いも isScoreWinAgainstTarget で統一します。
+    */
+    function calculateDangerConditionsForOpponent(myScore, opponentScore, myPlayerType, opponentType, depositBonus, ronHonbaBonus, tsumoHonbaPerPlayer, tsumoHonbaTotal, opponentPositionKey) {
+      const pointList = opponentType === "dealer" ? dealerRonPoints : childRonPoints;
+
+      // 相手がロンで得る点数です（アガリ点＋本場分＋供託）。
+      function opponentGainOnRon(point) {
+        return point + ronHonbaBonus + depositBonus;
+      }
+
+      // 他家ロン：相手だけが加点され、自分は変わりません。
+      const normalRequired = findRequiredPoint(pointList, function(point) {
+        return !isScoreWinAgainstTarget(myScore, opponentScore + opponentGainOnRon(point), opponentPositionKey);
+      });
+
+      // 直撃ロン：相手が加点され、自分はアガリ点＋本場分を失います。
+      const directRequired = findRequiredPoint(pointList, function(point) {
+        return !isScoreWinAgainstTarget(myScore - (point + ronHonbaBonus), opponentScore + opponentGainOnRon(point), opponentPositionKey);
+      });
+
+      const tsumoDanger = findDangerTsumo(
+        opponentType,
+        myPlayerType,
+        opponentScore,
+        myScore,
+        depositBonus,
+        tsumoHonbaPerPlayer,
+        tsumoHonbaTotal,
+        opponentPositionKey
+      );
+
+      return {
+        normalRequired: normalRequired,
+        directRequired: directRequired,
+        tsumoDanger: tsumoDanger
+      };
+    }
+
+    /*
+      v59テスト: 相手がツモると逆転されてしまう、最小のツモ条件を探します。
+      支払いの計算は findRequiredTsumo と同じです（勝つ側が相手になります）。
+    */
+    function findDangerTsumo(opponentType, myPlayerType, opponentScore, myScore, depositBonus, tsumoHonbaPerPlayer, tsumoHonbaTotal, opponentPositionKey) {
+      if (opponentType === "dealer") {
+        for (const item of dealerTsumoPoints) {
+          const allPay = item.all;
+
+          // 親ツモは3人から同じ点数をもらいます。
+          const opponentGain = allPay * 3 + tsumoHonbaTotal + depositBonus;
+
+          // 自分は子なので、オール分＋本場分を支払います。
+          const myLoss = allPay + tsumoHonbaPerPlayer;
+
+          if (!isScoreWinAgainstTarget(myScore - myLoss, opponentScore + opponentGain, opponentPositionKey)) {
+            return {
+              kind: "dealer",
+              all: allPay,
+              totalPay: allPay * 3,
+              label: getTsumoPointLabel(item, "dealer")
+            };
+          }
+        }
+
+        return null;
+      }
+
+      // 相手が子の場合です。
+      for (const item of childTsumoPoints) {
+        // 子ツモは、子2人から childPay、親1人から dealerPay をもらいます。
+        const opponentGain = item.childPay * 2 + item.dealerPay + tsumoHonbaTotal + depositBonus;
+
+        // 自分が親なら dealerPay、子なら childPay を支払います。
+        const myLoss = (myPlayerType === "dealer" ? item.dealerPay : item.childPay) + tsumoHonbaPerPlayer;
+
+        if (!isScoreWinAgainstTarget(myScore - myLoss, opponentScore + opponentGain, opponentPositionKey)) {
+          return {
+            kind: "child",
+            childPay: item.childPay,
+            dealerPay: item.dealerPay,
+            totalPay: item.childPay * 2 + item.dealerPay,
+            label: getTsumoPointLabel(item, "child")
+          };
+        }
+      }
+
+      return null;
+    }
+
+    /*
+      v59テスト: 逆転される条件の行テキストを作ります。
+    */
+    function buildDangerLineTexts(danger, opponentType) {
+      if (danger.normalRequired === null && danger.directRequired === null && danger.tsumoDanger === null) {
+        return ["この点数表の範囲では、どうアガられても逆転されません"];
+      }
+
+      const texts = [];
+
+      if (danger.normalRequired === null) {
+        texts.push("他家ロン：この点数表の範囲では逆転されません");
+      } else {
+        texts.push(
+          "他家ロン：" + formatPoint(danger.normalRequired) + "以上で逆転されます" +
+          getRonPointLabel(danger.normalRequired, opponentType)
+        );
+      }
+
+      if (danger.directRequired === null) {
+        texts.push("直撃ロン：この点数表の範囲では逆転されません");
+      } else {
+        texts.push(
+          "直撃ロン：" + formatPoint(danger.directRequired) + "以上で逆転されます" +
+          getRonPointLabel(danger.directRequired, opponentType)
+        );
+      }
+
+      if (danger.tsumoDanger === null) {
+        texts.push("ツモ：この点数表の範囲では逆転されません");
+      } else if (danger.tsumoDanger.kind === "dealer") {
+        texts.push(
+          "ツモ：" + danger.tsumoDanger.all.toLocaleString("ja-JP") + "オール（" +
+          danger.tsumoDanger.totalPay.toLocaleString("ja-JP") + "）以上で逆転されます" +
+          danger.tsumoDanger.label
+        );
+      } else {
+        texts.push(
+          "ツモ：" + danger.tsumoDanger.childPay.toLocaleString("ja-JP") + " / " +
+          danger.tsumoDanger.dealerPay.toLocaleString("ja-JP") + "（" +
+          danger.tsumoDanger.totalPay.toLocaleString("ja-JP") + "）以上で逆転されます" +
+          danger.tsumoDanger.label
+        );
+      }
+
+      return texts;
+    }
+
+    function buildDangerLinesHtml(danger, opponentType) {
+      return buildDangerLineTexts(danger, opponentType).map(function(text) {
+        return "<div class='target-condition-line'>" + text + "</div>";
+      }).join("");
+    }
+
+    function buildDangerCompactHtml(danger, opponentType) {
+      return buildDangerLineTexts(danger, opponentType).map(function(text) {
+        return "<div class='simple-main-condition'>" + text + "</div>";
+      }).join("");
     }
 
     /*
@@ -8397,7 +8697,7 @@
       シンプル結果を画面に表示します。
       最初は確認順だけ表示し、リーチ棒6パターンは折りたたみで表示します。
     */
-    function renderSimpleTargetResults(selfItem, topTarget, oneAboveTarget, topCondition, oneAboveCondition, playerType, dealerPosition, baseDepositBonus, ronHonbaBonus, tsumoHonbaPerPlayer, tsumoHonbaTotal) {
+    function renderSimpleTargetResults(selfItem, topTarget, oneAboveTarget, topCondition, oneAboveCondition, playerType, dealerPosition, baseDepositBonus, ronHonbaBonus, tsumoHonbaPerPlayer, tsumoHonbaTotal, dangerConditions) {
       const box = document.getElementById("simpleResultBox");
       const area = document.getElementById("simpleResultText");
 
@@ -8406,10 +8706,24 @@
       let cardsHtml = "";
 
       if (!oneAboveTarget) {
+        // v60テスト: 判定結果ボックスはCSSで非表示のため、見える場所である
+        // このカードに、相手全員分の逆転される条件を表示します。
+        let dangerHtml = "";
+
+        if (dangerConditions) {
+          dangerHtml = dangerConditions.map(function(entry) {
+            return (
+              "<div class='simple-target'>振ってはいけない点数：" + entry.item.label + " " + formatPoint(entry.item.score) + "（" + roleText(entry.opponentType) + "）</div>" +
+              buildDangerCompactHtml(entry.danger, entry.opponentType)
+            );
+          }).join("");
+        }
+
         cardsHtml +=
-          "<div class='simple-card top-card'>" +
+          "<div class='simple-card top-card current-leader-card'>" +
           "<div class='simple-card-title'>現在トップです</div>" +
           "<div class='simple-main-condition'>無理に逆転条件を狙う必要はありません</div>" +
+          dangerHtml +
           "<div class='simple-note'>親の位置：" + positionLabelFromKey(dealerPosition) + "</div>" +
           "</div>";
 
@@ -8508,6 +8822,13 @@
 
       const scoreMap = buildPositionScoreMap(candidates);
       const selfItem = scoreMap.bottom;
+      if (Object.values(scoreMap).some(item => !item || item.score <= 0)) {
+        const message = "4人分の点数が揃うまで順位は未確定です。";
+        const result = document.getElementById("simpleResultBox");
+        document.getElementById("simpleResultText").textContent = message;
+        result.style.display = "block";
+        return;
+      }
 
       if (!selfItem) {
         textArea.innerHTML =
@@ -8554,31 +8875,53 @@
         }
       });
 
-      // B：自分より点数が高い人の中で、最も点差が近い人を探します。
-      const higherOpponents = opponents
-        .filter(function(item) {
-          return item.score > selfItem.score ||
-            (item.score === selfItem.score && !isSelfAheadByStartingDealer(item.key));
-        })
-        .sort(function(a, b) {
-          if (a.score !== b.score) {
-            return (a.score - selfItem.score) - (b.score - selfItem.score);
-          }
-          return getStartingDealerPriority(a.key) - getStartingDealerPriority(b.key);
-        });
-
-      const oneAboveTarget = higherOpponents.length > 0 ? higherOpponents[0] : null;
+      const oneAboveTarget = sortedPlayers[selfRank - 2] || null;
 
       let html = "";
       let topCondition = null;
       let oneAboveCondition = null;
+      let dangerConditions = null;
 
       if (!oneAboveTarget) {
         html +=
           "<div class='target-condition'>" +
           "<div class='target-condition-title'>現在トップです</div>" +
-          "右・上・左の全員より自分の点数が高いため、1つ上を抜く条件は不要です。" +
+          "右・上・左の全員より自分の点数が高いため、1つ上を抜く条件は不要です。<br>" +
+          "各相手に逆転されてしまう最小のアガリ点（振ってはいけない点数）を表示します。" +
           "</div>";
+
+        // v59テスト: トップのときは、各相手に逆転される条件を計算します。
+        // 点数が高い相手（脅威が近い順）に並べます。
+        dangerConditions = opponents
+          .slice()
+          .sort(function(a, b) {
+            return b.score - a.score;
+          })
+          .map(function(item) {
+            const opponentType = getOpponentTypeFromPosition(item.key, dealerPosition);
+            const danger = calculateDangerConditionsForOpponent(
+              myScore,
+              item.score,
+              playerType,
+              opponentType,
+              depositBonus,
+              ronHonbaBonus,
+              tsumoHonbaPerPlayer,
+              tsumoHonbaTotal,
+              item.key
+            );
+
+            return { item: item, opponentType: opponentType, danger: danger };
+          });
+
+        dangerConditions.forEach(function(entry) {
+          html +=
+            "<div class='target-condition'>" +
+            "<div class='target-condition-title'>逆転される条件：" + entry.item.label + " " + formatPoint(entry.item.score) + "</div>" +
+            "相手：" + roleText(entry.opponentType) + "<br>" +
+            buildDangerLinesHtml(entry.danger, entry.opponentType) +
+            "</div>";
+        });
       } else {
         const topTargetOpponentType = getOpponentTypeFromPosition(topTarget.key, dealerPosition);
 
@@ -8657,7 +9000,8 @@
         depositBonus,
         ronHonbaBonus,
         tsumoHonbaPerPlayer,
-        tsumoHonbaTotal
+        tsumoHonbaTotal,
+        dangerConditions
       );
     }
 
@@ -9123,7 +9467,8 @@
       画像読み込み後に自動で点数を読み取る関数です。
       失敗した場合は、撮り直し・手入力を案内します。
     */
-    async function autoAnalyzeLedNumbers(requiredTotal) {
+    async function autoAnalyzeLedNumbers(requiredTotals) {
+      const requestId = ++photoRequestId;
       const status = document.getElementById("status");
       const imageLoadStatus = document.getElementById("imageLoadStatus");
 
@@ -9136,15 +9481,16 @@
       }
 
       try {
-        const readOk = await analyzeLedNumbersCore(requiredTotal);
+        const readOk = await analyzeLedNumbersCore(requiredTotals, requestId);
+        if (requestId !== photoRequestId) return null;
         if (readOk) {
           if (imageLoadStatus) {
             imageLoadStatus.textContent = "点数を読み取りました。必要なら点数一覧を手で修正してください。";
           }
         } else {
-          const message = requiredTotal === undefined
+          const message = requiredTotals === undefined
             ? "読み取れませんでした。画像を撮り直すか、点数を手で入力してください。"
-            : "供託を反映した合計が一致しません。";
+            : "選択した基準と点数合計が一致しません。";
           if (status) {
             status.textContent = message;
           }
@@ -9153,8 +9499,9 @@
             imageLoadStatus.textContent = message;
           }
         }
-        return readOk;
+        return Boolean(readOk);
       } catch (error) {
+        if (requestId !== photoRequestId) return null;
         console.error(error);
 
         if (status) {
@@ -9193,6 +9540,8 @@
 
     
     function openManualDiamondInput() {
+      ++photoRequestId;
+      document.getElementById("analyzeButton").disabled = !originalImageDataUrl;
       if (document.activeElement && document.activeElement.blur) {
         document.activeElement.blur();
       }

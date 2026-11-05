@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "mahjong-point-diff:" + self.registration.scope + ":";
-const CACHE_NAME = CACHE_PREFIX + "v54-angled-led";
+const CACHE_NAME = CACHE_PREFIX + "v61-bugfix-test";
 
 const APP_FILES = [
   "./",
